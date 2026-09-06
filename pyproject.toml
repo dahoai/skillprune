@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skillprune"
-version = "0.1.0"
+version = "0.2.0"
 description = "Audit your installed agent skills against real usage. Finds what never fires, what collides, and what it costs you every turn."
 readme = "README.md"
 requires-python = ">=3.9"

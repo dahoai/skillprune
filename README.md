@@ -20,8 +20,9 @@ pipx install skillprune          # or keep it around
 
 ```
 skillprune                       # report
+skillprune --prune               # act on it, reversibly
 skillprune --json                # + skillprune.json
-skillprune --selfcheck           # the four guards below, as assertions
+skillprune --selfcheck           # the guards below, as assertions
 ```
 
 No install needed either way — it is one stdlib-only file, so
@@ -30,16 +31,36 @@ No install needed either way — it is one stdlib-only file, so
 Example, on a real 291-skill install:
 
 ```
-  291 skills installed · 39 have ever fired · 225 dead (77%) · 27 too new to judge
-  ~26,043 tokens paid on every turn for skills you never use
+  171 loaded    35 fired    123 dead    13 too new to judge
+  125 more sit on disk, not loaded by any plugin — those cost nothing
+
+  ████████████████████░░░░░░░░  72% of your skill surface has never fired
+
+  ~15,673 tokens in every system prompt, for skills that have never fired
+  71% of the ~22,169 tokens your skills cost you per turn
 ```
+
+## Removing what it finds
+
+`skillprune --prune` prints a plan, asks once, and applies it. Two levers,
+because they are two different things:
+
+- **Plugins** where not one skill has ever fired → `claude plugin disable`.
+  Reversible with `enable`. A plugin with even one live skill is never offered.
+- **Personal skills** in `~/.claude/skills/` → **moved**, never deleted, to
+  `~/.claude/.skillprune-trash/<timestamp>/`, next to a generated `restore.sh`
+  that puts every one of them back.
+
+There is no per-skill disable for plugin skills — the plugin is the unit the
+tool manages, so that is the unit offered.
 
 ## How it decides
 
 | Source | Used for |
 |---|---|
 | `~/.claude/projects/**/*.jsonl` | what actually fired, and when |
-| `SKILL.md` frontmatter | what is installed |
+| `SKILL.md` frontmatter | what exists on disk |
+| `plugins/installed_plugins.json` | which of those are actually **loaded** |
 | `claude plugin details` | real always-on token cost (not re-derived) |
 
 Nothing leaves the machine. No dependencies beyond the standard library.
@@ -47,7 +68,7 @@ Nothing leaves the machine. No dependencies beyond the standard library.
 ## Where it deliberately errs
 
 A tool that says *delete this* has one unacceptable failure: naming something
-you actually use. Four guards, each pinned by an assertion in `--selfcheck`:
+you actually use. Five guards, each pinned by an assertion in `--selfcheck`:
 
 - **Slash commands count.** A skill invoked only as `/foo` never produces a
   `Skill` tool call. Counting just the tool call marks it dead.
@@ -57,6 +78,11 @@ you actually use. Four guards, each pinned by an assertion in `--selfcheck`:
   often disagrees with the marketplace directory the skill was found in. Two
   plugins sharing a skill name will cross-credit — that errs toward *in use*,
   the only safe direction here.
+- **On disk is not loaded.** A marketplace you added and a plugin you later
+  uninstalled both leave complete `SKILL.md` trees behind, and neither costs a
+  single prompt token. Only what `installed_plugins.json` actually points at is
+  counted. Skipping this inflated the count on the author's own machine from a
+  true 171 to 291.
 - **14-day grace.** Something installed yesterday hasn't had its chance.
   Tune `GRACE_DAYS`; skills under it are reported separately, never as dead.
 
