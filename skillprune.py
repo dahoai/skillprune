@@ -306,5 +306,9 @@ def demo() -> None:
     print("ok")
 
 
-if __name__ == "__main__":
+def cli():
     demo() if "--selfcheck" in sys.argv else main()
+
+
+if __name__ == "__main__":
+    cli()

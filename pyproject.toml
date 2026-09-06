@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "skillprune"
+version = "0.1.0"
+description = "Audit your installed agent skills against real usage. Finds what never fires, what collides, and what it costs you every turn."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Isaac Gounton" }]
+keywords = ["claude", "claude-code", "agent", "skills", "audit", "tokens", "context"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/dahoai/skillprune"
+Issues = "https://github.com/dahoai/skillprune/issues"
+
+[project.scripts]
+skillprune = "skillprune:cli"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["skillprune.py"]
+
+[tool.hatch.build.targets.sdist]
+include = ["skillprune.py", "README.md", "LICENSE"]

@@ -1,2 +1,4 @@
 skillprune.json
 __pycache__/
+dist/
+*.egg-info/
