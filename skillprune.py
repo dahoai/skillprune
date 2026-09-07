@@ -40,7 +40,7 @@ def step(msg: str = "") -> None:
         sys.stderr.write("\r\033[2K" + (c(f"  {msg}", DIM) if msg else ""))
         sys.stderr.flush()
 
-HOME = Path.home() / ".claude"
+HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
 # ponytail: 14d grace so a skill installed yesterday isn't called dead.
 GRACE_DAYS = 14
 # ponytail: Jaccard on description word-sets. Crude vs embeddings, but it needs
@@ -310,6 +310,15 @@ def render(r: dict) -> None:
 
     print()
     print("  " + c("skillprune", BOLD) + "  " + c("·", DIM) + "  " + c(str(HOME), DIM))
+    if not r["installed"] and not r.get("inert"):
+        # "0% has never fired" is a true sentence about an empty set and a
+        # useless one to read. Nothing found is a different outcome from
+        # nothing wrong, and the difference is the whole point of the tool.
+        print("\n  " + c("no skills found here.", YEL)
+              + " nothing to audit — is this the right machine?\n")
+        print(c(f"  looked in {HOME}/skills, plugins/cache and plugins/marketplaces", DIM))
+        print(c("  set CLAUDE_CONFIG_DIR if your Claude Code config lives elsewhere\n", DIM))
+        return
     print("\n  " + c(r["installed"], BOLD) + " loaded    " + c(n_live, GRN) + " fired    "
           + c(n_dead, RED) + " dead    " + c(len(r["young"]), DIM) + " too new to judge")
     if r.get("inert"):
@@ -542,6 +551,12 @@ def demo() -> None:
         assert want in r.stdout + r.stderr, (args, r.stdout, r.stderr)
     r = subprocess.run(me + ["--version"], capture_output=True, text=True, timeout=20)
     assert r.stdout.strip() == f"skillprune {__version__}", r.stdout
+
+    # 9. an empty machine says so, instead of reporting "0% has never fired"
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(root / "nothing-here"))
+    r = subprocess.run(me, capture_output=True, text=True, timeout=60, env=env)
+    assert "no skills found" in r.stdout, r.stdout
+    assert "never fired" not in r.stdout, r.stdout
 
     print("ok")
 

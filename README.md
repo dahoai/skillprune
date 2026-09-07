@@ -55,6 +55,10 @@ because they are two different things:
 There is no per-skill disable for plugin skills — the plugin is the unit the
 tool manages, so that is the unit offered.
 
+Set `CLAUDE_CONFIG_DIR` if your Claude Code config lives somewhere other
+than `~/.claude`. With nothing to audit it says so, rather than reporting
+0%.
+
 ## How it decides
 
 | Source | Used for |
