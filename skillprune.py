@@ -6,7 +6,7 @@ turn, forever. This finds the ones that never fire and the ones that collide.
 
 Data sources (all already on your machine, nothing is sent anywhere):
   ~/.claude/projects/**/*.jsonl   what actually fired, and when
-  SKILL.md frontmatter            what exists on disk
+  SKILL.md frontmatter            what exists on disk (symlinks followed)
   plugins/installed_plugins.json  which of those are actually LOADED
   `claude plugin details`         real always-on token cost (not re-derived)
 """
@@ -99,12 +99,60 @@ def owner(p: Path, reg: dict, strict: bool):
             return name
     if HOME / "skills" in p.parents:
         return ""
+    if Path.cwd() / ".claude" / "skills" in p.parents:
+        return ""               # project-local, loaded only in this directory
     if not strict:                  # no registry on disk (fresh install, tests)
         parts = p.parts
         if "marketplaces" in parts and len(parts) > parts.index("marketplaces") + 1:
             return parts[parts.index("marketplaces") + 1]
         return ""
     return None
+
+
+SKIP = {"node_modules", ".git", ".venv", "venv", "__pycache__", "dist", "build"}
+
+
+def walk(root: Path):
+    """Every SKILL.md under root, THROUGH symlinks.
+
+    Path.rglob refuses to descend a symlinked directory, and the agent-neutral
+    layout — one ~/.agents/skills tree linked into each IDE's config — is
+    nothing but symlinked directories. Missing them is silent: the skills load
+    and bill you every turn while the audit reports a clean surface.
+
+    Cycles are real once you follow links, so dirs are visited by identity.
+    """
+    seen = set()
+    for dirpath, dirs, files in os.walk(root, followlinks=True):
+        try:
+            st = os.stat(dirpath)
+        except OSError:
+            dirs[:] = []
+            continue
+        if (st.st_dev, st.st_ino) in seen:
+            dirs[:] = []            # already walked this tree by another name
+            continue
+        seen.add((st.st_dev, st.st_ino))
+        # NOT "skip dotdirs": plugins legitimately ship skills in .claude/skills
+        # and .openclaw/skills. Only vendored trees are pruned — a SKILL.md
+        # under node_modules is a dependency's fixture, never a loaded skill.
+        dirs[:] = [d for d in dirs if d not in SKIP]
+        if "SKILL.md" in files:
+            yield Path(dirpath) / "SKILL.md"
+
+
+def roots() -> list:
+    """Where loaded skills can live: the config home, plus this project's own.
+
+    A ~/.agents tree that is NOT linked into a config dir is deliberately out of
+    scope — nothing loads it, so it costs nothing, which is the same rule that
+    excludes uninstalled plugin caches.
+    """
+    out = [HOME]
+    proj = Path.cwd() / ".claude" / "skills"
+    if proj.is_dir():
+        out.append(proj)
+    return out
 
 
 def installed() -> dict:
@@ -120,7 +168,7 @@ def installed() -> dict:
     reg = registry()
     strict = bool(reg)
     best = {}
-    for sk in sorted(HOME.rglob("SKILL.md")):
+    for sk in sorted({p for r in roots() for p in walk(r)}):
         fm = frontmatter(sk)
         name = fm.get("name") or sk.parent.name
         desc = fm.get("description", "")
@@ -552,6 +600,22 @@ def demo() -> None:
     r = subprocess.run(me + ["--version"], capture_output=True, text=True, timeout=20)
     assert r.stdout.strip() == f"skillprune {__version__}", r.stdout
 
+    # 10. a skill reached only through a symlink is still found, and a
+    #     dotdir like .openclaw/skills is not mistaken for junk
+    shared = root / "agents-shared" / "skills" / "linked-skill"
+    shared.mkdir(parents=True)
+    (shared / "SKILL.md").write_text("---\nname: linked-skill\ndesc: x\n---\n")
+    dot = root / "cfg" / "plugins" / "p" / ".openclaw" / "skills" / "dotskill"
+    dot.mkdir(parents=True)
+    (dot / "SKILL.md").write_text("---\nname: dotskill\ndesc: x\n---\n")
+    (root / "cfg" / "skills").mkdir(parents=True, exist_ok=True)
+    os.symlink(shared, root / "cfg" / "skills" / "linked-skill")
+    got = {p.parent.name for p in walk(root / "cfg")}
+    assert "linked-skill" in got, f"symlinked skill invisible: {got}"
+    assert "dotskill" in got, f"dotdir skill pruned: {got}"
+    os.symlink(root / "cfg", root / "cfg" / "loop", target_is_directory=True)
+    assert len(list(walk(root / "cfg"))) == 2, "symlink cycle not contained"
+
     # 9. an empty machine says so, instead of reporting "0% has never fired"
     env = dict(os.environ, CLAUDE_CONFIG_DIR=str(root / "nothing-here"))
     r = subprocess.run(me, capture_output=True, text=True, timeout=60, env=env)
@@ -571,6 +635,9 @@ usage: skillprune [--prune [-y]] [--json] [--selfcheck] [--version] [--help]
   --json       also write skillprune.json (full per-skill data)
   --selfcheck  run the built-in assertions and exit
   --version    print version and exit
+
+Scans ~/.claude (or $CLAUDE_CONFIG_DIR) and ./.claude/skills, following
+symlinks — a shared ~/.agents/skills tree linked into your config counts.
 
 Nothing leaves your machine. --prune disables plugins (reversible with
 `claude plugin enable`) and MOVES personal skills to ~/.skillprune-trash/

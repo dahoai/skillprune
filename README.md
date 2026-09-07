@@ -55,6 +55,13 @@ because they are two different things:
 There is no per-skill disable for plugin skills — the plugin is the unit the
 tool manages, so that is the unit offered.
 
+It follows symlinks, so the agent-neutral layout — one shared
+`~/.agents/skills` tree linked into each tool's config — is counted rather
+than silently skipped, and skills a plugin ships under `.claude/skills/` or
+`.openclaw/skills/` are found too. A project's own `./.claude/skills` is
+included when you run it there. A shared tree that is *not* linked into a
+config dir is deliberately ignored: nothing loads it, so it costs nothing.
+
 Set `CLAUDE_CONFIG_DIR` if your Claude Code config lives somewhere other
 than `~/.claude`. With nothing to audit it says so, rather than reporting
 0%.
