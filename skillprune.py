@@ -14,6 +14,8 @@ import json, os, re, shutil, subprocess, sys, time
 from collections import defaultdict
 from pathlib import Path
 
+__version__ = "0.3.0"
+
 W = min(shutil.get_terminal_size((88, 24)).columns, 92)
 _COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
 _STEPS = sys.stderr.isatty()
@@ -531,10 +533,50 @@ def demo() -> None:
         assert subprocess.run(["sh", str(sh)], capture_output=True).returncode == 0
         assert (mine / "SKILL.md").exists(), "restore.sh did not put it back"
         HOME = orig
+
+    # 8. the CLI surface: --help exits 0, garbage exits 2, neither scans
+    me = [sys.executable, __file__]
+    for args, code, want in ((["--help"], 0, "usage:"), (["--bogus"], 2, "unknown option")):
+        r = subprocess.run(me + args, capture_output=True, text=True, timeout=20)
+        assert r.returncode == code, (args, r.returncode)
+        assert want in r.stdout + r.stderr, (args, r.stdout, r.stderr)
+    r = subprocess.run(me + ["--version"], capture_output=True, text=True, timeout=20)
+    assert r.stdout.strip() == f"skillprune {__version__}", r.stdout
+
     print("ok")
 
 
+HELP = """skillprune — audit your installed agent skills against real usage.
+
+usage: skillprune [--prune [-y]] [--json] [--selfcheck] [--version] [--help]
+
+  (no flags)   scan and print the report
+  --prune      offer to disable dead plugins and trash dead personal skills
+  -y, --yes    with --prune, skip the confirmation prompt
+  --json       also write skillprune.json (full per-skill data)
+  --selfcheck  run the built-in assertions and exit
+  --version    print version and exit
+
+Nothing leaves your machine. --prune disables plugins (reversible with
+`claude plugin enable`) and MOVES personal skills to ~/.skillprune-trash/
+with a restore.sh — it never deletes anything.
+
+https://github.com/dahoai/skillprune
+"""
+
+FLAGS = {"--prune", "-y", "--yes", "--json", "--selfcheck", "--version", "-h", "--help"}
+
+
 def cli():
+    bad = [a for a in sys.argv[1:] if a not in FLAGS]
+    if bad or {"-h", "--help"} & set(sys.argv):
+        if bad:
+            print(c(f"unknown option: {bad[0]}\n", RED), file=sys.stderr)
+        print(HELP, file=sys.stderr if bad else sys.stdout)
+        sys.exit(2 if bad else 0)
+    if "--version" in sys.argv:
+        print(f"skillprune {__version__}")
+        return
     demo() if "--selfcheck" in sys.argv else main()
 
 

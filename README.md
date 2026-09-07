@@ -23,6 +23,7 @@ skillprune                       # report
 skillprune --prune               # act on it, reversibly
 skillprune --json                # + skillprune.json
 skillprune --selfcheck           # the guards below, as assertions
+skillprune --help                # all of the above
 ```
 
 No install needed either way — it is one stdlib-only file, so
