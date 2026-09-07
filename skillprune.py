@@ -55,6 +55,8 @@ STOP = set("a an the and or of for to in on with your you it its is are be use "
            "agent agents claude code use uses user".split())
 
 
+# ── discover: what is on disk, and which of it is actually loaded ───────────
+
 def frontmatter(p: Path) -> dict:
     """Parse the leading --- block. Only name/description matter here."""
     try:
@@ -190,6 +192,8 @@ def installed() -> dict:
     return skills
 
 
+# ── observe: what has actually fired, from the transcripts ──────────────────
+
 def hooked() -> set:
     """Plugins shipping hooks. A hook fires without any Skill tool call, so
     these can look 'never used' while running on every single session."""
@@ -223,6 +227,8 @@ def used() -> dict:
             h[1] = max(h[1], mt)
     return {k: tuple(v) for k, v in hits.items()}
 
+
+# ── price: what it costs, asked of Claude Code rather than re-derived ───────
 
 def plugin_list() -> str:
     """`claude plugin list` output, fetched once."""
@@ -262,6 +268,8 @@ def costs() -> dict:
             out[f"{plug}:{name}"] = int(float(tok.rstrip("k")) * (1000 if tok.endswith("k") else 1))
     return out
 
+
+# ── judge: dead, colliding, too young to call ───────────────────────────────
 
 def words(s: str) -> set:
     return {w for w in re.findall(r"[a-z]{3,}", s.lower()) if w not in STOP}
@@ -341,6 +349,8 @@ def report() -> dict:
             "collisions": collisions(skills)}
 
 
+# ── present ─────────────────────────────────────────────────────────────────
+
 def bar(frac: float, width: int = 28) -> str:
     n = round(max(0.0, min(1.0, frac)) * width)
     return c("█" * n, RED) + c("░" * (width - n), DIM)
@@ -413,6 +423,8 @@ def render(r: dict) -> None:
     print()
 
 
+# ── act ─────────────────────────────────────────────────────────────────────
+
 def prune(r: dict, yes: bool = False) -> None:
     """Disable fully-dead plugins; move dead personal skills to a trash dir.
 
@@ -482,6 +494,8 @@ def prune(r: dict, yes: bool = False) -> None:
         print(f"\n  undo:  {c(f'sh {trash}/restore.sh', BOLD, CYA)}")
     print(c("\n  restart Claude Code for the change to take effect.\n", DIM))
 
+
+# ── entry points ────────────────────────────────────────────────────────────
 
 def main() -> None:
     r = report()
