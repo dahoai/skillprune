@@ -73,6 +73,7 @@ than `~/.claude`. With nothing to audit it says so, rather than reporting
 | `~/.claude/projects/**/*.jsonl` | what actually fired, and when |
 | `SKILL.md` frontmatter | what exists on disk |
 | `plugins/installed_plugins.json` | which of those are actually **loaded** |
+| `settings.json` `enabledPlugins` | which of those are switched off |
 | `claude plugin details` | real always-on token cost (not re-derived) |
 
 Nothing leaves the machine. No dependencies beyond the standard library.
@@ -84,6 +85,8 @@ you actually use. Five guards, each pinned by an assertion in `--selfcheck`:
 
 - **Slash commands count.** A skill invoked only as `/foo` never produces a
   `Skill` tool call. Counting just the tool call marks it dead.
+- **MCP calls count.** A plugin whose MCP tools you call is in use, even with
+  zero skill invocations. It is never listed as safe to disable.
 - **Hooks count.** A plugin shipping a `SessionStart` hook runs every session
   with an invocation count of zero. Those are held back, never auto-disabled.
 - **Bare-name matching.** Transcripts log `<plugin>:<skill>`, and that prefix

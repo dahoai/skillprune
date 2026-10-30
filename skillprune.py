@@ -8,13 +8,14 @@ Data sources (all already on your machine, nothing is sent anywhere):
   ~/.claude/projects/**/*.jsonl   what actually fired, and when
   SKILL.md frontmatter            what exists on disk (symlinks followed)
   plugins/installed_plugins.json  which of those are actually LOADED
+  settings.json enabledPlugins    which of those are switched off
   `claude plugin details`         real always-on token cost (not re-derived)
 """
 import json, os, re, shutil, subprocess, sys, time
 from collections import defaultdict
 from pathlib import Path
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 W = min(shutil.get_terminal_size((88, 24)).columns, 92)
 _COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
@@ -77,20 +78,36 @@ def frontmatter(p: Path) -> dict:
     return out
 
 
+def disabled() -> set:
+    """`name@marketplace` keys switched off in settings. A disabled plugin stays
+    in installed_plugins.json but costs no prompt tokens. Later files override
+    earlier ones, the same way Claude Code layers its settings."""
+    state = {}
+    for f in (HOME / "settings.json", Path.cwd() / ".claude" / "settings.json",
+              Path.cwd() / ".claude" / "settings.local.json"):
+        try:
+            state.update(json.loads(f.read_text()).get("enabledPlugins") or {})
+        except (OSError, ValueError, AttributeError):
+            continue
+    return {k for k, on in state.items() if on is False}
+
+
 def registry() -> dict:
     """installPath -> real plugin name, from the plugin manager's own record.
 
     This is the difference between what is ON DISK and what is LOADED. A
     marketplace you added and a plugin you later uninstalled both leave full
     SKILL.md trees behind; neither costs you a single prompt token. Counting
-    them is how you end up reporting 291 skills when 177 are real.
+    them is how you end up reporting 291 skills when 177 are real. Disabled
+    plugins are left out for the same reason.
     """
     try:
         d = json.loads((HOME / "plugins" / "installed_plugins.json").read_text())
     except (OSError, ValueError):
         return {}
+    off = disabled()
     return {Path(e["installPath"]): key.split("@")[0]
-            for key, entries in d.get("plugins", {}).items()
+            for key, entries in d.get("plugins", {}).items() if key not in off
             for e in entries if e.get("installPath")}
 
 
@@ -168,7 +185,8 @@ def installed() -> dict:
     """
     step("reading SKILL.md frontmatter…")
     reg = registry()
-    strict = bool(reg)
+    # the file, not `reg`: with every plugin disabled, reg is empty but still true
+    strict = (HOME / "plugins" / "installed_plugins.json").is_file()
     best = {}
     for sk in sorted({p for r in roots() for p in walk(r)}):
         fm = frontmatter(sk)
@@ -196,7 +214,13 @@ def installed() -> dict:
 
 def hooked() -> set:
     """Plugins shipping hooks. A hook fires without any Skill tool call, so
-    these can look 'never used' while running on every single session."""
+    these can look 'never used' while running on every single session.
+
+    Named from the registry when there is one: the marketplace dir is often not
+    the plugin's name, and a mismatch here lets a hooked plugin be disabled."""
+    reg = registry()
+    if reg:
+        return {name for ip, name in reg.items() if (ip / "hooks").is_dir()}
     root = HOME / "plugins" / "marketplaces"
     return {d.parent.name for d in root.glob("*/hooks") if d.is_dir()} if root.is_dir() else set()
 
@@ -208,6 +232,10 @@ INVOKED = (re.compile(rb'"skill":"([^"]+)"'),              # Skill tool
            re.compile(rb"<command-name>/?([^<]+)</command-name>"))  # /slash
 
 
+# A plugin's MCP tools are use too, and show up in no skill count at all.
+MCP_CALL = re.compile(rb'"name":"mcp__plugin_([^_"]+)_')
+
+
 def used() -> dict:
     """slug -> (count, last_epoch), scanned from transcripts."""
     step("scanning transcripts…")
@@ -217,6 +245,7 @@ def used() -> dict:
             blob = jl.read_bytes()
         except OSError:
             continue
+        _MCP.update(m.decode(errors="replace") for m in MCP_CALL.findall(blob))
         found = [m for pat in INVOKED for m in pat.findall(blob)]
         if not found:
             continue
@@ -245,6 +274,7 @@ def plugin_list() -> str:
 
 _LIST = None
 _INERT = 0
+_MCP = set()
 
 
 def plugin_names() -> dict:
@@ -335,7 +365,7 @@ def report() -> dict:
     for r in live:
         if r["plugin"]:
             by_plugin.pop(r["plugin"], None)
-    for h in hooks:                 # a hook runs every session, Skill call or not
+    for h in hooks | _MCP:          # both are use that no Skill call records
         by_plugin.pop(h, None)
 
     step()
@@ -603,9 +633,28 @@ def demo() -> None:
         sh = next((root / ".skillprune-trash").rglob("restore.sh"))
         assert subprocess.run(["sh", str(sh)], capture_output=True).returncode == 0
         assert (mine / "SKILL.md").exists(), "restore.sh did not put it back"
+
+        # 8. hooks are credited to the plugin, not to its marketplace dir.
+        (live.parents[1] / "hooks").mkdir()
+        assert hooked() == {"realplugin"}, hooked()
+
+        # 9. a disabled plugin stops counting, and all-disabled stays strict.
+        (root / "settings.json").write_text(json.dumps(
+            {"enabledPlugins": {"realplugin@mkt": False}}))
+        got = installed()
+        assert set(got) == {"mine"}, got
+        (root / "settings.json").unlink()
+
+        # 10. an MCP tool call keeps a plugin off the safe-to-disable list.
+        log = root / "projects/p/s.jsonl"
+        log.parent.mkdir(parents=True)
+        log.write_text('{"type":"tool_use","name":"mcp__plugin_my-plug_srv__do"}\n')
+        used()
+        assert "my-plug" in _MCP, _MCP
+        _MCP.clear()
         HOME = orig
 
-    # 8. the CLI surface: --help exits 0, garbage exits 2, neither scans
+    # 11. the CLI surface: --help exits 0, garbage exits 2, neither scans
     me = [sys.executable, __file__]
     for args, code, want in ((["--help"], 0, "usage:"), (["--bogus"], 2, "unknown option")):
         r = subprocess.run(me + args, capture_output=True, text=True, timeout=20)
